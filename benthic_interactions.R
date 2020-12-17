@@ -26,44 +26,9 @@ library(WRS2)
 library(lsmeans)
 library(sjPlot)
 library(devtools)
-library(nlcor)
 library(ppcor) # this pacakge computes partial and semipartial correlations.
 
-x <- seq(0,3*pi,length.out=100)
-y <- sin(x)
-plot(x,y,type="l")
-# linear correlation is small
-cor(x,y)
-# [1] 6.488616e-17
-# nonlinear correlation is more representative
-nlcor(x,y, plt = T)
-# $cor.estimate
-# [1] 0.9774
-# $adjusted.p.value
-# [1] 1.586302e-09
-# $cor.plot
-
-#8/6: all corals accounted for in quads 1-2 of KW. After, did solo & interactions of all specoes. 
-#Did not record algae
-
-#8/7: Recorded past and ssid solo and interaction of ALL sizes
-#5 overgrowths: three 10x1
-
-#8/8: all ssid and past solo and inter that were not juve. some juve pics taken...
-#10 over growths: five 10x1
-
-#8/10: all solo and sponge interactions of adults (use for contingency tabe)
-#4 over growths:  three 10x1
-
-#8/11: Just looked at overgrowth scentarios and solos. made measurements (use for contingency table)
-#9 overgrowths: three 10x1
-
-#8/12: targeted overgrown corals to fill in correlation. made measurements 
-#Did not fill in more of contingency table
-#25 overgrowths: six 25X1
-
-setwd("/Users/nina/Projects/St John 2020/Research_Data")
-coral <-read_excel("St_john_2020.xlsx",sheet="Data") #to read your file
+coral <-read_excel("Data/benthic_interactions.xlsx",sheet="Data") #to read your file
 str(coral)
 
 coral$Transect <- as.factor(coral$Transect)
@@ -74,23 +39,21 @@ master <- coral%>%
   filter(picture=="yes")  #Need pics to verify information
                           #All of them are taken out from other filters, but taking them out now just in case
 
-################## Frequency of interactions #######################################
+################## Which species #######################################
 pairs <- master%>%
   filter(Sponge_inter=="sponge_win")%>% #Only want those with sponge overgrowth
-  filter(Num_sponge=="1")%>% #Don't know what to do when corals have more than 1 sponge
-  filter(Sponge_Identified=="yes")%>%
-  group_by(Coral, Sponge_1)%>%
+  filter(Sponge_Identified=="yes")%>% #Some IDK the ID
+  group_by(Coral, Sponge_ID)%>%
   summarise(n=n())
   #mutate(perc = (n / sum(n))*100)
 
 ssid_pairs <- pairs%>%
   filter(Coral=="ssid")%>%
-  unite(pair,Coral,Sponge_1,sep="_")
+  unite(pair,Coral,Sponge_ID,sep="_")
 
 past_pairs <- pairs%>%
   filter(Coral=="past")%>%
-  unite(pair,Coral,Sponge_1,sep="_")
-
+  unite(pair,Coral,Sponge_ID,sep="_")
 
 ggplot(data=ssid_pairs, aes(x=pair, y=n)) +
   geom_bar(stat="identity")+
@@ -102,7 +65,7 @@ ggplot(data=past_pairs, aes(x=pair, y=n)) +
   theme_classic()+
   theme(axis.text.x = element_text(size = 8, angle = 50, hjust = 1))
 
-ggplot(data=pairs, aes(x=Sponge_1, y=n, fill=Coral))+
+ggplot(data=pairs, aes(x=Sponge_ID, y=n, fill=Coral))+
   geom_bar(stat="identity")+
   theme_classic()+
   theme(legend.position="top")+
@@ -120,23 +83,23 @@ chidata <- master%>%
   filter(Inferred_algae %in% c("none","algae_win"))%>%
   filter(Sponge_inter %in% c("sponge_win", "solo"))
 
-past <- chidata%>%
+past.chi <- chidata%>%
   filter(Coral == "past")
 
-ssid <- chidata %>%
+ssid.chi <- chidata %>%
   filter(Coral=="ssid")
 
 #filter(Inferred_algae %in% c("none","algae_win"))%>% look at inffered algae
 
 #all corals
-chi <- chidata%>%
+chi.test <- chidata%>%
   dplyr::count(Sponge_inter, Inferred_algae, sort = TRUE)
-chi
+chi.test
 
 #split into ssid and past
-chisep <- chidata%>%
+chi.test.sep <- chidata%>%
   dplyr::count(Coral, Sponge_inter, Inferred_algae, sort = TRUE)
-chisep
+chi.test.sep
 
 #Use Yates' continuity correction for:
 #This formula is chiefly used when at least one cell of the table has an expected count smaller than 5. 
@@ -146,11 +109,11 @@ table
 chisq.test(table, correct=FALSE)
 
 #run tables seperately
-past_table <- table(past$Sponge_inter, past$Inferred_algae)
+past_table <- table(past.chi$Sponge_inter, past.chi$Inferred_algae)
 past_table
 chisq.test(past_table, correct=FALSE)
 
-ssid_table <- table(ssid$Sponge_inter, ssid$Inferred_algae)
+ssid_table <- table(ssid.chi$Sponge_inter, ssid.chi$Inferred_algae)
 ssid_table
 chisq.test(ssid_table, correct=FALSE)
 
@@ -165,11 +128,14 @@ chisq.test(ssid_table, correct=FALSE)
 
 sizes <- master%>%
   filter(Date %in% c("81120", "81220", "81320", "81420"))%>%
-  filter(use_for_size=="yes")%>%
-  mutate("Coral_avg" = ((Coral_max1+Coral_max2)/2))%>%
-  mutate("Coral_area" = (2*3.14*(Coral_avg/2)^2))%>%
-  mutate("Sponge_area" = (Sponge_max1*Sponge_max2))%>%
-  mutate("Algae_area" = (Algae_max1*Algae_max2))%>%
+  filter(use_for_size=="yes")%>% #corals that I got correct algae measurements for 
+                                #and that had algae around the coral
+                                #ex. corals with inferred algae that I didn't measure
+                                #is a "no" for use_for_size
+  mutate("Coral_avg_diameter" = ((Coral_max1+Coral_max2)/2))%>%
+  mutate("Coral_area" = (2*3.14*(Coral_avg_diameter/2)^2))%>% #assuming circle??
+  mutate("Sponge_area" = (Sponge_max1*Sponge_max2))%>% #assuming rectangle
+  mutate("Algae_area" = (Algae_max1*Algae_max2))%>% #assuming rectangle
   mutate("Perc_sponge" = ((Sponge_area/Coral_area)*100))%>%
   mutate("Perc_algae" = ((Algae_area/Coral_area)*100))%>%
   filter(Sponge_area!="0")%>%
@@ -180,40 +146,24 @@ sizes <- master%>%
   
 hist(sizes$Coral_area, breaks=10)
 
-
 ggplot(sizes)+
   aes(Perc_sponge, Perc_algae, group=Coral)+ #(x,y)
-  geom_point(aes(shape=Coral, color=CoralArea_category), size=2, stroke=1, alpha = 1)+
+  geom_point(aes(color=Coral), size=2, stroke=1, alpha = 1)+
+  #geom_point(aes(shape=Coral, color=CoralArea_category), size=2, stroke=1, alpha = 1)+
   labs(x="Sponge overgrowth (%)",y="Algal overgrowth (%)")+
   scale_shape_manual(values=c(2, 1))+
   scale_color_manual(values=c("#F8A42F", "#FF4605", "#860111"))+
-  theme_classic()
+  theme_classic()+
   geom_smooth(aes(y=Perc_algae), method = "lm", formula = y~(exp(-0.1*x)), se=FALSE, size=1, colour="black")
 
 #size bin
 #lots of leverage on the right
 #plot CI around the quadratic fit. 
 
-  scale_color_gradient(low="blue", high="light blue")
-
-  scale_color_gradientn(colours = rainbow(5))
- 
-hist(sizes$Coral_area)
-
-#geom_smooth(aes(y=Perc_algae), method = "lm", formula = y ~ poly(x, 2), se=FALSE, size=1, colour="black")
-
-#test for finding out a,b, and c from a quadratic equation
-x <- seq(from=1, to=5, length.out=100)
-y <- 4 - 0.6*x + 0.1*x^2 
-ll <-(lm(y~x+I(x^2)))  
-summary(ll)
-## done 
-
 #Finding best fit for data
 y <- (sizes$Perc_algae)
 x <- (sizes$Perc_sponge)
 z <- sizes$Coral_area
-x <-((0.06213*x^2)-1.96196*x+19.57629) #linearizing (after taking out outlier)
 
 plot(x,y)
 
@@ -235,9 +185,16 @@ summary(fit4)
 #looking for outlier from quadratic
 plot(cooks.distance(fit2))
 cooks.distance(fit2)
-any(cooks.distance(fit2) > 1) #proposed thresold
-any(cooks.distance(fit2) > (4 * nrow(sizes)))  #proposed thresold
 
+#4/N
+#N=number of observations
+#K=number of explanatory variables 
+#4/32=0.125
+
+
+
+
+#Testing for normality
 shapiro.test(x) 
 shapiro.test(y)
 lillie.test(x)
@@ -326,34 +283,3 @@ nlcor(x, y, refine=0.5, plt = T) #same result as pearsons
         fixedLabels[l] <- paste0(ifelse(l %% 2 == 0, '', '\n'), labels[l])
       }
       return(fixedLabels)})
-
-
-
-
-
-require(MASS) ## for mvrnorm()
-set.seed(1)
-dat <- mvrnorm(1000, mu = c(4,5), Sigma = matrix(c(1,0.8,1,0.8), ncol = 2))
-dat <- data.frame(dat)
-names(dat) <- c("X","Y")
-plot(dat)
-res <- resid(mod <- lm(Y ~ X, data = dat))
-res.qt <- quantile(res, probs = c(0.05,0.95))
-want <- which(res >= res.qt[1] & res <= res.qt[2])
-plot(dat, type = "n")
-
-points(dat[-want,], col = "black", pch = 21, bg = "black", cex = 0.8)
-points(dat[want,], col = "red", pch = 21, bg = "red", cex = 0.8)
-abline(mod, col = "blue", lwd = 2)
-
-ares <- abs(res)
-absres.qt <- quantile(ares, prob = c(.9))
-abswant <- which(ares <= absres.qt)
-## plot - virtually the same, but not quite
-plot(dat, type = "n")
-points(dat[-abswant,], col = "black", pch = 21, bg = "black", cex = 0.8)
-points(dat[abswant,], col = "red", pch = 21, bg = "red", cex = 0.8)
-abline(mod, col = "blue", lwd = 2)
-head(cooks.distance(mod))
-any(cooks.distance(mod) > 1)
-any(cooks.distance(mod) > (4 * nrow(dat)))
