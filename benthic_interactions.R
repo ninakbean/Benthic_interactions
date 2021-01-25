@@ -24,9 +24,6 @@ library(rstatix)
 library(broom)
 library(WRS2)
 library(lsmeans)
-library(sjPlot)
-library(devtools)
-library(ppcor) # this pacakge computes partial and semipartial correlations.
 
 coral <-read_excel("Data/benthic_interactions.xlsx",sheet="Data") #to read your file
 str(coral)
@@ -157,6 +154,10 @@ past_table <- table(past.chi$Sponge_inter, past.chi$Inferred_algae)
 past_table
 chisq.test(past_table, correct=FALSE)
 
+#             algae_win none
+#solo              19   22
+#sponge_win         5    2
+
 ssid.chi <- chidata %>%
   filter(Coral=="ssid")
 
@@ -211,9 +212,9 @@ plot(cooks)
 #y=6946, x=104350.639, Date TQID: 81420, 4,5,a
 
 # Step 1: Call the pdf command to start the plot
-pdf(file = "Figs/correlation.pdf",   # The directory you want to save the file in
-    width = 7, # The width of the plot in inches
-    height = 6) # The height of the plot in inches
+#pdf(file = "Figs/correlation.pdf",   # The directory you want to save the file in
+#    width = 7, # The width of the plot in inches
+#    height = 6) # The height of the plot in inches
 
 # Step 2: Create the plot with R code
 
