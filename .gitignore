@@ -1,3 +1,6 @@
+# Mac
+.DS_Store
+
 # R generated items
 .Rproj.user
 .Rhistory
