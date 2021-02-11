@@ -131,7 +131,8 @@ SA.correlation <- SA%>%
 SA.correlation.wide <- spread(SA.correlation, other.SA.type, other.SA)
 
 SA.2021 <- SA%>%
-  filter(!date %in% c("81120","81220", "81420"))
+  filter(!date %in% c("81120","81220", "81420"))%>%
+  filter(coral.species=="PAST")
   #filter(other.SA.type=="algae") #taking sponges out because not enough (5)
 
 perm <- master%>%
@@ -282,20 +283,21 @@ summary(model1, type=II)
 #outlier changed overall result, but not significantly?
 
 
-################### AREA ##############################################
+################### AREA PERCENT ##############################################
 #Hypothesis 1: SA
 
-#pdf(file = "Figs/other_SA_perc_log.pdf",   # The directory you want to save the file in
+# pdf(file = "Figs/other_SA_perc_log.pdf",   # The directory you want to save the file in
 #    width = 5, # The width of the plot in inches
 #    height = 4) # The height of the plot in inches
-
+# 
 ggplot(SA.2021)+
   aes(y=(other.SA.perc.ellipsoid), x=(coral.SA.ellipsoid))+ #coral.max.mm, (x,y) #all 6cm lower have more algal overgrowth
   geom_point(aes(color=other.SA.type))+ #color=CoralArea_category,
-  labs(x=(expression(paste("Log Coral area"," ", (mm^2)))),y="Log Algal area (%)")+
+  labs(x=(expression(paste("Log coral (ellipsoid) area"," ", (mm^2)))),y="Log Algal area (%)")+
   theme_classic(base_size=12)+
-  geom_smooth(method="lm", color="black",size=0.5, aes(color="Exp Model"), formula= (y ~ (exp(-0.005*x))))
-  
+  geom_smooth(method="lm", color="black",size=0.5, aes(color="Exp Model"), formula= (y ~ (exp(-0.005*x))))+
+  annotate("text", x = 4e+06, y = 25, label = "y=e^-0.005x")
+
 dev.off()
 
 model <- lm(log(other.SA.perc.ellipsoid)~log(coral.SA.ellipsoid), data=SA.2021) #can't log 0s
@@ -309,100 +311,211 @@ summary(fit3)
 
 #y=-0.74x+7.93
 
+################### AREA OG VALUES ##############################################
+#OG VALUES
 #pdf(file = "Figs/other_SA_raw.pdf",   # The directory you want to save the file in
 #    width = 5, # The width of the plot in inches
 #    height = 4) # The height of the plot in inches
 
 ggplot(SA.2021)+
-  aes(y=(other.SA), x=(coral.SA.ellipsoid))+ #coral.max.mm, (x,y) #all 6cm lower have more algal overgrowth
+  aes(y=log10(other.SA), x=log10(coral.SA.ellipsoid))+ #coral.max.mm, (x,y) #all 6cm lower have more algal overgrowth
   geom_point(aes(color=other.SA.type))+
   labs(x=(expression(paste("Coral area"," ", (mm^2)))),y=(expression(paste("Algal area"," ", (mm^2)))))+
   theme_classic(base_size=12)+
   geom_smooth(method="lm", color="black")
 
+model <- lm(log10(other.SA)~log10(coral.SA.ellipsoid), data=SA.2021) #can't log 0s
+summary(ancova)
+
+#box cox
+boxcox(model) #told me to use logs on both axes
+boxcox(model, lambda=seq(-0.5,0.5,0.01)) #told me to use logs on both axes
+
+#histogram visualization
+hist(SA.2021$other.SA)
+y<- log10(SA.2021$other.SA)
+hist(y)
+
+hist(SA.2021$coral.SA.ellipsoid)
+y<- log10(SA.2021$coral.SA.ellipsoid)
+hist(y)
+
+SA.2021.wins <- SA.2021%>%
+  mutate(log_other.SA.wins = Winsorize(log10(other.SA), na.rm=TRUE))
+
+#other models
+model.wins <- lm(log_other.SA.wins~log10(coral.SA.ellipsoid), data=SA.2021.wins) #can't log 0s
+
+AIC(model.wins, model) #winsorized better fit
+anova(model.wins, model) #winsorized models are sig different
+summary(model, type=II)
+summary(model.wins, type=II) #winsorized model interpretation is the same
 
 #linear regression assumptions
-#! The variance in y is constant (i.e. the variance does not change as y gets bigger).
-#The explanatory variable, x, is measured without error. 
-#The difference between a measured value of y and the value predicted by the model for the same value of x is called a residual.
-#Residuals are measured on the scale of y (i.e. parallel to the y axis). 
-#The residuals are normally distributed.
-
-model <- lm(log(other.SA)~log(coral.SA.ellipsoid), data=SA.2021) #can't log 0s
-summary(model, type=II)
-
-#.fitted: fitted values
-#.resid: residual errors
-#.hat: hat values, used to detect high-leverage points (or extreme values in the predictors x variables)
-#.std.resid: standardized residuals, which is the residuals divided by their standard errors. Used to detect outliers (or extreme values in the outcome y variable)
-#.cooksd: Cook’s distance, used to detect influential values, which can be an outlier or a high leverage point
-
-model.diag.metrics <- augment(model)
+model.diag.metrics <- as.data.frame(augment(model))
 sresid <- studres(model) #studentized residuals
 shapiro.test(sresid) # non normal
 
-#Residuals vs Fitted
+
 #linearity assumption
-#show no fitted pattern, horizontal at zero
 plot(model, 1)
 
-#Normal Q-Q. Used to examine whether the residuals are normally distributed. 
-#It’s good if residuals points follow the straight dashed line.
+#Normal Q-Q 
 plot(model,2)
-
-# Assess normality of residuals using shapiro wilk test
 shapiro_test(model.diag.metrics$.std.resid)
 
 #Homogeneity of variance of the residuals (homoscedasticity)
-#scale-location plot, also known as the spread-location plot.
-#This plot shows if residuals are spread equally along the ranges of predictors. 
-#It’s good if you see a horizontal line with equally spread points. 
 plot(model, 3)
 
-#Residuals vs Leverage. Used to identify influential cases
-#Observations whose standardized residuals are greater than 3 in absolute value are possible outliers (James et al. 2014)
+#standardized residuals > 3 in absolute value are possible outliers (James et al. 2014)
 #Standardized residuals interpreted as the # of SE away from the regression line.
-#A value of this statistic above 2(p + 1)/n indicates an observation with high leverage (P. Bruce and Bruce 2017); 
-#where, p is the number of predictors and n is the number of observations.
-#outlying values are generally located at the upper right corner or at the lower right corner. 
-
-# Cook's distance
-plot(model, 4, id.n = 3) #id.n to label top 5
-# Residuals vs LeverageL influential obs
-plot(model, 5, id.n = 5)
 
 #high influence if Cook’s distance exceeds 4/(n - p - 1)(P. Bruce and Bruce 2017)
 #where n is the number of observations and p the number of predictor variables.
 #4/111-1-1
 #4/109=0.037
 
-#y=3.663562, x= 14.074251, ID= 36 
-#y=9.245708, x=14.538550, ID= 5464 
-#y=3.332205, x=13.093918, ID= 93 
+# Cook's distance
+plot(model, 4, id.n = 3) #id.n to label top 5
+# Residuals vs LeverageL influential obs
+plot(model, 5, id.n = 5)
 
-SA.2021.1 <- SA.2021%>%
-  filter(!coral.ID %in% c(36))
+#other.SA, coral.SA.ellipsoid
+#ylog=1.591065,  xlog=6.112369, ID= 5468
+#y=39.00004, x=1295296
 
-SA.2021.2 <- SA.2021%>%
-  filter(!coral.ID %in% c(36, 5464))
+#ylog=4.015360, xlog=6.314012
+#y=10360.01, x=2060687, ID= 82
 
-SA.2021.3 <- SA.2021%>%
-  filter(!coral.ID %in% c(36, 5464, 93))
+SA.2021.outliers <- SA.2021%>%
+  filter(!coral.ID %in% c(5468, 82))
 
-model1 <- lm(log(other.SA)~log(coral.SA.ellipsoid), data=SA.2021.1) #can't log 0s
-model2 <- lm(log(other.SA)~log(coral.SA.ellipsoid), data=SA.2021.2) #can't log 0s
-model3 <- lm(log(other.SA)~log(coral.SA.ellipsoid), data=SA.2021.3) #can't log 0s
+model1 <- lm(log10(other.SA)~log10(coral.SA.ellipsoid), data=SA.2021.outliers) #can't log 0s
 
-AIC(model, model1, model2, model3)
-Anova(model, model1, type=3)
-Anova(model1, model2, type=3)
-Anova(model2, model3, type=3)
+AIC(model, model1, model.wins)
+Anova(model, model1, type=3) #taking outlier has significant effect
 
 summary(model, type=II)
-summary(model3, type=II)
-#(y=-0.44x-0.04, R2=0.27, p<0.001)
-#outlier didn't change overall result, keep whole data set
+summary(model1, type=II)
+#no difference in interpretation
+#Keep whole data set
 
+#ANCOVA for algae and sponges
+ancova <- lm(log10(other.SA)~other.SA.type*log10(coral.SA.ellipsoid), data=SA.2021) #can't log 0s
+summary(ancova)
+#Coral size has a significant effect
+#Slopes of algae and sponge are the same because no interaction
+anova(ancova)
+
+ancova1 <- lm(log10(other.SA)~other.SA.type+log10(coral.SA.ellipsoid), data=SA.2021) #can't log 0s
+anova(ancova, ancova1)
+#model simplification was justified because it caused a negligible reduction in the explanatory power of the model
+#taking out sponge as a factor
+ancova2 <- lm(log10(other.SA)~log10(coral.SA.ellipsoid), data=SA.2021)
+anova(ancova1, ancova2) #there is a significant effect of sponge with the intercept
+summary(ancova1)
+anova(ancova1) #overall no effect?
+step(ancova)
+
+#data sheet with no sponges because only 6 sponges and because 
+#sponges have same intercept and slope as algae
+SA.2021.algae <- SA.2021 %>%
+  filter(other.SA.type=="algae")
+
+# pdf(file = "Figs/other_SA_raw_algae.pdf",   # The directory you want to save the file in
+#    width = 5, # The width of the plot in inches
+#    height = 4) # The height of the plot in inches
+  
+ggplot(SA.2021.algae)+
+  aes(y=log10(other.SA), x=log10(coral.SA.ellipsoid))+ #coral.max.mm, (x,y) #all 6cm lower have more algal overgrowth
+  geom_point()+
+  labs(x=(expression(paste("Log coral area"," ", (mm^2)))),y=(expression(paste("Log algal area"," ", (mm^2)))))+
+  theme_classic(base_size=12)+
+  geom_smooth(method="lm", color="red",size=0.5, formula= (y~x))+
+  annotate("text", x = 5, y = 4.5, label = "y=0.26x+1.44, R2=0.06, p<0.01")
+
+#geom_smooth(method="lm", color="red",size=0.5, formula= (log10(y) ~ log10(x)))
+
+dev.off()
+
+model <- lm(log10(other.SA)~log10(coral.SA.ellipsoid), data=SA.2021.algae) #can't log 0s
+
+#box cox
+boxcox(model) #told me to use logs on both axes
+boxcox(model, lambda=seq(-0.5,0.5,0.01)) #told me to use logs on both axes
+
+#histogram visualization
+hist(SA.2021.algae$other.SA)
+y<- log10(SA.2021.algae$other.SA)
+hist(y)
+
+hist(SA.2021.algae$coral.SA.ellipsoid)
+y<- log10(SA.2021.algae$coral.SA.ellipsoid)
+hist(y)
+
+SA.2021.algae.wins <- SA.2021.algae%>%
+  mutate(log_other.SA.wins = Winsorize(log10(other.SA), na.rm=TRUE))
+
+#other models
+model.wins <- lm(log_other.SA.wins~log10(coral.SA.ellipsoid), data=SA.2021.algae.wins) #can't log 0s
+
+AIC(model.wins, model) #winsorized better fit
+anova(model.wins, model) #winsorized models are sig different
+summary(model, type=II)
+summary(model.wins, type=II) #winsorized model interpretation is the same
+
+#linear regression assumptions
+model.diag.metrics <- as.data.frame(augment(model))
+sresid <- studres(model) #studentized residuals
+shapiro.test(sresid) # non normal
+
+#linearity assumption
+plot(model, 1)
+
+#Normal Q-Q 
+plot(model,2)
+shapiro_test(model.diag.metrics$.std.resid)
+
+#Homogeneity of variance of the residuals (homoscedasticity)
+plot(model, 3)
+
+#standardized residuals > 3 in absolute value are possible outliers (James et al. 2014)
+#Standardized residuals interpreted as the # of SE away from the regression line.
+
+#high influence if Cook’s distance exceeds 4/(n - p - 1)(P. Bruce and Bruce 2017)
+#where n is the number of observations and p the number of predictor variables.
+#4/111-1-1
+#4/109=0.037
+
+# Cook's distance
+plot(model, 4, id.n = 3) #id.n to label top 5
+# Residuals vs LeverageL influential obs
+plot(model, 5, id.n = 5)
+
+#other.SA, coral.SA.ellipsoid
+#ylog=1.591065,  xlog=6.112369, ID= 5468
+#y=39.00004, x=1295296
+
+#ylog=4.015360, xlog=6.314012
+#y=10360.01, x=2060687, ID= 82
+
+#ylog=1.447158, xlog=5.686616
+#y=28, x=485977.3, ID= 86
+
+SA.2021.algae.outliers <- SA.2021.algae%>%
+  filter(!coral.ID %in% c(5468, 82, 86))
+
+model1 <- lm(log10(other.SA)~log10(coral.SA.ellipsoid), data=SA.2021.algae.outliers) #can't log 0s
+
+AIC(model, model1, model.wins)
+Anova(model, model1, type=3) #taking outlier has significant effect
+
+summary(model, type=II) #USE THIS
+summary(model1, type=II)
+#no difference in interpretation
+#Keep whole data set
+
+################### AREA BAR PLOT ##############################################
 SA.2021.bar <- SA.2021%>%
   group_by(CoralArea_category, other.SA.type)%>%
   summarise(other.SA.perc.ellipsoid.mean=mean(other.SA.perc.ellipsoid, na.rm=TRUE),
